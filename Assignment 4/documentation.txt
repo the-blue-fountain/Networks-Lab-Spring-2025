@@ -1,0 +1,132 @@
+Here's the rewritten documentation:
+
+# KTP (KGP Transport Protocol) Implementation Documentation
+
+## 1. Data Structures
+
+### 1.1 Window Management
+- window: Structure to manage sending and receiving windows
+  - slots[]: Array tracking sequence numbers and buffer mappings
+  - size: Current window size
+  - start: Start position of window (base sequence number)
+
+### 1.2 Socket Information
+- sock_info: Core socket tracking structure
+  - free: Flag indicating socket availability
+  - pid: Process ID of socket owner
+  - udp_sockid: Associated UDP socket identifier
+  - ip_addr: Destination IP address
+  - port: Destination port number
+
+### 1.3 Buffer Management
+- send_info: Send buffer management structure
+  - buffer[][]: 2D array storing outgoing messages
+  - free_slots: Available buffer space counter
+  - lengths[]: Array tracking actual message lengths
+  - timestamps[]: Array tracking message send times
+
+- receive_info: Receive buffer management structure
+  - buffer[][]: 2D array storing incoming messages
+  - active[]: Flags indicating valid data in slots
+  - lengths[]: Array tracking received message lengths
+  - base_idx: Current base index for reading
+
+## 2. Core Components
+
+### 2.1 Initialization Process (initksocket.c)
+- Creates and initializes IPC resources (shared memory, semaphores)
+- Launches three critical threads:
+  * Receiver (R): Handles incoming messages
+  * Sender (S): Manages timeouts and retransmissions
+  * Garbage Collector (GC): Cleans up orphaned sockets
+
+### 2.2 Socket Library (ksocket.c)
+- Implements five key functions:
+  * k_socket(): Creates new KTP sockets
+  * k_bind(): Associates addresses with sockets
+  * k_sendto(): Handles message transmission
+  * k_recvfrom(): Manages message reception
+  * k_close(): Cleans up socket resources
+
+## 3. Protocol Features
+
+### 3.1 Reliability Mechanisms
+- Sequence Numbers: 8-bit sequence numbers for message ordering
+- Acknowledgments: Explicit ACKs for received messages
+- Retransmission: Automatic retransmission after timeout (T seconds)
+- Window Control: Dynamic window sizing based on receiver capacity
+
+### 3.2 Flow Control
+- Sliding Window: Implements window-based flow control
+- Buffer Management: Fixed-size buffers (512 bytes per message)
+- Window Updates: Piggybacks receiver window size on ACKs
+
+### 3.3 Error Handling
+- Duplicate Detection: Tracks and drops duplicate messages
+- Loss Simulation: dropMessage() function simulates packet loss
+- Error Reporting: Custom error codes for common scenarios
+
+## 4. Implementation Highlights
+
+### 4.1 Concurrency Management
+- Thread Safety: Semaphore-based synchronization for shared resources
+- Atomic Operations: Careful locking for critical sections
+- Race Prevention: Well-defined state transitions
+
+### 4.2 Memory Management
+- Fixed Buffers: Pre-allocated buffer spaces
+- Efficient Storage: Direct buffer indexing
+- Resource Tracking: Careful management of system resources
+
+### 4.3 Performance Features
+- Zero-Copy: Direct buffer access where possible
+- Efficient ACKs: Cumulative acknowledgments
+- Smart Retransmission: Only retransmits unacknowledged packets
+
+## 5. Notable Functions
+
+### 5.1 In ksocket.c
+- initialize_windows(): Sets up window management structures
+- find_free_buffer_slot(): Efficiently locates available buffer space
+- process_data_message(): Handles incoming data packets
+- process_ack_message(): Processes acknowledgments
+- transmit_new_packets(): Manages new packet transmission
+
+### 5.2 In initksocket.c
+- R(): Receiver thread implementation
+- S(): Sender thread implementation
+- GC(): Garbage collection implementation
+- create_and_bind(): Socket creation and binding handler
+
+## 6. Robustness Features
+
+### 6.1 Error Recovery
+- Timeout Detection: Reliable timeout-based retransmission
+- Lost Packet Recovery: Automatic retransmission of lost packets
+- Window Updates: Recovery from receiver buffer full conditions
+
+### 6.2 Resource Management
+- Socket Cleanup: Automatic cleanup of abandoned sockets
+- Memory Protection: Protected shared memory access
+- Resource Limits: Enforced maximum socket and buffer limits
+
+## 7. Performance Analysis
+
+The implementation demonstrates excellent reliability with minimal overhead at various packet loss rates. The following table presents the relationship between packet loss probability (p) and transmission efficiency:
+
+| Packet Loss (p) | Messages | Transmissions | Average Transmissions per Message |
+|-----------------|----------|---------------|----------------------------------|
+| 0.05            | 400      | 485           | 1.21                             |
+| 0.10            | 400      | 566           | 1.42                             |
+| 0.15            | 400      | 620           | 1.55                             |
+| 0.20            | 400      | 655           | 1.64                             |
+| 0.25            | 400      | 758           | 1.90                             |
+| 0.30            | 400      | 839           | 2.10                             |
+| 0.35            | 400      | 887           | 2.22                             |
+| 0.40            | 400      | 1027          | 2.57                             |
+| 0.45            | 400      | 1089          | 2.72                             |
+| 0.50            | 400      | 1312          | 3.28                             |
+
+As expected, the number of required transmissions increases as the packet loss probability increases, with an approximately linear relationship at low loss rates that becomes more pronounced at higher loss probabilities. Even at 50% packet loss, the protocol maintains functionality with only 3.28 transmissions required per message on average.
+
+This implementation provides a robust, efficient, and feature-complete reliable transport protocol that successfully handles data transfer over unreliable channels while maintaining flow control and order guarantees.

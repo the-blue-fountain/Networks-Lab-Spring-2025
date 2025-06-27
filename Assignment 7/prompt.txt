@@ -1,0 +1,67 @@
+#codebase read instr.md carefully as it contains all the instrucions. Now follow the implementation I state below for writing the server.c(acts as CLDP server) and client.c(acts as the CLDP client) files.
+We will use the protocol 253, #define it as PROTOCOL.
+In both files, initialize a socket with SOCK_RAW and PROTOCOL.Then use IPPRTO_IP and IP_HDRINCL with setsockopt, as we will provide the network header. These are the fileds of the struct iphdr in each of the files :
+version = 4;
+ihl=5(we are not planning to use options);
+tos=0;
+tot_len=htons(sizeof(struct iphdr)+sizeof(struct cldp_header_t)+actual payload size);
+id = htons(counter++);
+frag_off=0;
+set an appropriate ttl value and explain why you chose the value in comments
+protocol=PROTOCOL;
+saddr and daddr are the same for localhost.
+Set check to 0, fill in the fields and set check=checksum(iphdr, sizeof(struct iphdr));(implement the checksum function)
+
+Set any parameter I have not given instructions for appropriately.
+
+Now we define our own headers for our own protocol.
+#pragma pack(push, 1)
+struct cldp_header_t{
+    uint8_t type;
+    uint32_t transaction_id;
+    uint32_t payload_len;
+    uint8_t reserved;
+    uint8_t sender_id;
+    uint8_t receiver_id;
+};
+#pragma pack(pop)
+type will have the type 0x01, 0x02, 0x03. transaction_id will be a random number.
+
+Now for server.c :
+initialize the socket properly as above and declare two struct timeval last and now. Also use fnctl to declare the socket as non blocking. 
+run a while loop.  inside the while loop, check whether now-last >=10s and if yes, set last to now and send HELLO.
+Next use select to check  whether we have something to read on the socket, with a timeout of 100 ms. If we have, respong to the message as follows :
+0x01 : ignore it
+0x02 : it is a query. Check the payload for what is asked and send an appropriate response. 
+0x03 : ignore it.
+Implement the queries for the three easiest and quickest to get metadata:
+- Query 1: Get system uptime
+- Query 2: Get current memory usage
+- Query 3: Get network interface status
+So the payload will be the query type. The response will be the same type, with the payload being the result of the query. For a query, 
+send payload as "Query : type(1,2,3 as in the list)" and for response, payload will be a nicely formatted string with the result of the query. The receiver of the response
+will just log it to the console as it is.
+Note that the transaction_id should be the same for the request and response. So the transaction_id of a message of type 0x02 is a random number but that of 0x03 should match the corresponding query of type 0x02.  
+Be paranoid. Assume the incoming packet might be malformed, corrupted, or not even intended for you (despite socket filtering). Validate lengths, checksums, and protocol numbers at each step before accessing data further into the buffer. Log a warning of anything wrong.
+Also, log the transaction id and the type of the message you received.
+At the beginning the server should generate a random number and store it as the id. It should be in the cldp_header of every message sent by that server, in the field sender_id.
+The receiver_id will be the id of the client, to whose query the server is responding, except in messages of type 0x01, where it will be NULL.
+
+For client.c :
+initialize the socket properly as above.
+Use fnctl to mark it as non-blocking. 
+Respond as per type in the header :
+0x01 : log to the console that this server is running,
+0x02 : ignore it
+0x03 : log to the console the message received and which server sent it
+Be paranoid. Assume the incoming packet might be malformed, corrupted, or not even intended for you (despite socket filtering). Validate lengths, checksums, and protocol numbers at each step before accessing data further into the buffer. Log a warning of anything wrong.
+use select to check whether we have something to read on STDIN, with a timeout 10 ms. If yes, read the user query and process it correctly. The again use select with the socket and timeout 10 ms. Respond to any messages received.
+At the very beginning the client should generate a random number and store it as the id. It should be in the cldp_header of every message sent by that client, in the field sender_id. 
+The receiver_id will be NULL, as it is intended for all servers and not for a specific one.
+When the client receives a message, it should check the receiver_id field to see if it indeed is the intended recipient. If not, it should not process the message further. 
+If the receiver_id is NULL, it should process the message as per the type in the header.
+
+
+
+Note that all messages, whether sent by client or server, should be broadcast messages. So the destination address should be INADDR_BROADCAST. 
+Set the socket option with setsockopt to allow broadcasting. Make sure to use the SO_BROADCAST option when setting the socket options.
